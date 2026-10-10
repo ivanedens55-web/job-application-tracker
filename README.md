@@ -2,7 +2,9 @@
 
 Keep every job application in one place. Add the company, role, link, status and a follow-up date, then see everything on a board grouped by status. Each user only ever sees their own applications.
 
-**Live demo:** [frontend URL] · **API:** [backend URL]/health
+**Live demo:** https://job-application-tracker-peach-kappa.vercel.app · **API health:** https://job-application-tracker-api-tzs1.onrender.com/health
+
+> The API runs on Render's free tier, so the first request after a quiet period can take up to a minute.
 
 ![Board](docs/screenshots/board.png)
 
