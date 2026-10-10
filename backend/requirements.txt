@@ -1,0 +1,8 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+pydantic[email]==2.12.5
+psycopg[binary]==3.3.6
+psycopg-pool==3.2.6
+PyJWT==2.10.1
+argon2-cffi==23.1.0
+python-dotenv==1.1.0
