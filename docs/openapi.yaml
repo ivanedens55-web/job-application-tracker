@@ -1,0 +1,311 @@
+openapi: 3.1.0
+info:
+  title: Job Application Tracker API
+  version: 1.0.0
+  description: |
+    JSON API for tracking job applications. Every application belongs to one user,
+    and a user can only read or change their own applications.
+
+    Auth: send `Authorization: Bearer <access_token>` on protected routes.
+    Tokens come from POST /auth/login and expire after a short time (30 minutes by default).
+
+    Errors: every error uses the same shape (see ErrorResponse).
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable, machine-readable error code.
+              enum:
+                - validation_error
+                - unauthorized
+                - not_found
+                - conflict
+                - method_not_allowed
+                - internal_error
+            message:
+              type: string
+              description: Human-readable message that is safe to show to users.
+            details:
+              type: array
+              description: Present only for validation_error. One entry per invalid field.
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+
+    Credentials:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+
+    User:
+      type: object
+      required: [id, email]
+      properties:
+        id: { type: integer }
+        email: { type: string, format: email }
+
+    Token:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, enum: [bearer] }
+        expires_in:
+          type: integer
+          description: Lifetime of the token in seconds.
+
+    ApplicationStatus:
+      type: string
+      enum: [Applied, Interview, Offer, Rejected]
+
+    ApplicationCreate:
+      type: object
+      additionalProperties: false
+      required: [company, role]
+      properties:
+        company: { type: string, minLength: 1, maxLength: 120 }
+        role: { type: string, minLength: 1, maxLength: 120 }
+        url:
+          type: [string, "null"]
+          maxLength: 2048
+          description: Must start with http:// or https://
+        status:
+          $ref: "#/components/schemas/ApplicationStatus"
+        follow_up_date:
+          type: [string, "null"]
+          format: date
+        notes:
+          type: [string, "null"]
+          maxLength: 2000
+
+    ApplicationUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Partial update. Send only the fields you want to change. url, follow_up_date and notes may be set to null to clear them.
+      properties:
+        company: { type: string, minLength: 1, maxLength: 120 }
+        role: { type: string, minLength: 1, maxLength: 120 }
+        url: { type: [string, "null"], maxLength: 2048 }
+        status: { $ref: "#/components/schemas/ApplicationStatus" }
+        follow_up_date: { type: [string, "null"], format: date }
+        notes: { type: [string, "null"], maxLength: 2000 }
+
+    Application:
+      type: object
+      required: [id, company, role, url, status, follow_up_date, notes, follow_up_due, created_at, updated_at]
+      properties:
+        id: { type: integer }
+        company: { type: string }
+        role: { type: string }
+        url: { type: [string, "null"] }
+        status: { $ref: "#/components/schemas/ApplicationStatus" }
+        follow_up_date: { type: [string, "null"], format: date }
+        notes: { type: [string, "null"] }
+        follow_up_due:
+          type: boolean
+          description: Computed by the backend. True when the follow-up date is today or earlier and the status is Applied or Interview.
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ApplicationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Application" }
+
+  responses:
+    ValidationError:
+      description: Request body, path or query parameter is invalid.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Unauthorized:
+      description: Missing, invalid or expired access token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Resource does not exist or belongs to another user.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  parameters:
+    ApplicationId:
+      name: application_id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+
+paths:
+  /health:
+    get:
+      summary: Liveness check (used by Render)
+      responses:
+        "200":
+          description: Service is running.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+
+  /auth/register:
+    post:
+      summary: Create an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "201":
+          description: Account created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "409":
+          description: Email already registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /auth/login:
+    post:
+      summary: Exchange email and password for an access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "200":
+          description: Logged in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Token" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /auth/me:
+    get:
+      summary: Current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The logged-in user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /applications:
+    get:
+      summary: List the current user's applications
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/ApplicationStatus" }
+      responses:
+        "200":
+          description: Applications, ordered by follow-up date (soonest first, empty last), then newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    post:
+      summary: Add an application
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicationCreate" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /applications/{application_id}:
+    parameters:
+      - $ref: "#/components/parameters/ApplicationId"
+    get:
+      summary: Get one application
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The application.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    patch:
+      summary: Update an application (partial)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicationUpdate" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    delete:
+      summary: Delete an application
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204":
+          description: Deleted.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
